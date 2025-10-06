@@ -107,12 +107,23 @@ export default function Page() {
       <p className="small">Submit an idea and upvote your favorites. No sign-in required.</p>
 
       <form onSubmit={submit} style={{ display: 'flex', gap: 8, margin: '12px 0 16px' }}>
-        <input
-          className="input"
-          placeholder="Your idea (max 80 chars)"
-          value={text}
-          onChange={e => setText(e.target.value)}
-          maxLength={80}
+      <input
+        className="input"
+        placeholder="Two words max, letters & numbers (25 char max)"
+        value={text}
+        onChange={e => {
+          // Soft-filter client-side (server is source of truth)
+          const v = e.target.value
+            .replace(/[^\w ]/g, '')        // keep letters/digits/underscore/space
+            .replace(/_/g, '')             // drop underscore
+            .replace(/\s+/g, ' ')          // collapse spaces
+            .slice(0, 25)
+          // enforce at most one space
+          const parts = v.split(' ')
+          const limited = parts.length > 2 ? parts.slice(0, 2).join(' ') : v
+          setText(limited)
+        }}
+        maxLength={25}
         />
         <button className="button" disabled={!text.trim() || loading}>
           {loading ? 'Submitting…' : 'Submit'}
