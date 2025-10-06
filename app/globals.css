@@ -35,7 +35,27 @@ body {
   border: 1px solid var(--border);
   border-radius: 16px;
   overflow: hidden;
+  padding: 14px 14px 12px;
+  text-align: center;
 }
+
+.essence-img-wrap {
+  width: 140px;
+  height: 140px;
+  margin: 10px auto 8px;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: radial-gradient(80px 80px at 50% 40%, rgba(96,165,250,0.15), transparent 70%);
+}
+
+.essence-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
 .essence-img-wrap { aspect-ratio: 1/1; overflow: hidden; }
 .essence-img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .essence-text { padding: 12px; }
