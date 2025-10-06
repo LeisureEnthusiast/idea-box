@@ -153,4 +153,26 @@ section:last-of-type, .container:last-of-type { margin-bottom: 0 !important; }
 .pulse {
   animation: pulseRing 1.6s ease-out;
 }
+/* Grouped browse box */
+.group-card {
+  background: linear-gradient(180deg, rgba(15,23,42,0.78), rgba(15,23,42,0.58));
+  border-color: rgba(148,163,184,0.16);
+  padding-top: 14px;
+  padding-bottom: 14px;
+}
+
+.group-head { margin: 0 0 6px; }
+.h2 { font-size: 16px; font-weight: 700; margin: 0 0 2px; letter-spacing: .2px; }
+
+.divider {
+  height: 1px;
+  background: var(--border);
+  margin: 12px 0 8px;
+}
+
+/* List sits closer to the search within the same card */
+.list.list-inset { margin-top: 8px; }
+
+/* Slightly tighter row spacing inside grouped list (optional) */
+.group-card .idea-row { padding: 10px 12px; }
 
