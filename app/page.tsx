@@ -11,7 +11,6 @@ type Idea = {
   text: string
   votes: number
   created_at: string
-  // hidden?: boolean  // uncomment if you added the "hidden" column
 }
 
 const brandEssences = [
@@ -27,6 +26,7 @@ export default function Page() {
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState('')
   const [highlightId, setHighlightId] = useState<string | null>(null)
+  const [pinnedIds, setPinnedIds] = useState<string[]>([]) // 👈 persistent “top” order
   const pollRef = useRef<number | null>(null)
 
   // Initialize Teams (safe outside Teams)
@@ -40,7 +40,10 @@ export default function Page() {
     try {
       const res = await fetch('/api/list', { cache: 'no-store' })
       const json = await res.json()
-      setIdeas(json.items || [])
+      const items: Idea[] = json.items || []
+      setIdeas(items)
+      // keep only pins that still exist
+      setPinnedIds(prev => prev.filter(id => items.some(i => i.id === id)))
     } catch {
       // ignore
     }
@@ -67,21 +70,30 @@ export default function Page() {
     return () => { if (pollRef.current) clearInterval(pollRef.current) }
   }, [])
 
-  // Temporarily bump a specific idea to the top and add a pulse effect
-  const bumpAndHighlight = (id: string) => {
+  // Pin helper: move id to the front of pinnedIds
+  const pin = (id: string) => {
+    setPinnedIds(prev => [id, ...prev.filter(x => x !== id)])
+  }
+
+  // Pin + pulse highlight (pulse fades; pin persists)
+  const pinAndHighlight = (id: string) => {
+    pin(id)
     setHighlightId(id)
     const el = document.getElementById(`idea-${id}`)
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    window.setTimeout(() => setHighlightId(null), 2000)
+    window.setTimeout(() => setHighlightId(null), 1600)
   }
 
-  // Render order: usually server order; if highlighting, move highlightId to top
+  // Render order: all pinned first (in pinned order), then the rest in server order
   const renderIdeas = useMemo(() => {
-    if (!highlightId) return ideas
-    const idx = ideas.findIndex(i => i.id === highlightId)
-    if (idx < 0) return ideas
-    return [ideas[idx], ...ideas.slice(0, idx), ...ideas.slice(idx + 1)]
-  }, [ideas, highlightId])
+    if (!ideas.length) return ideas
+    const set = new Set(pinnedIds)
+    const pinned = pinnedIds
+      .map(id => ideas.find(i => i.id === id))
+      .filter(Boolean) as Idea[]
+    const rest = ideas.filter(i => !set.has(i.id))
+    return [...pinned, ...rest]
+  }, [ideas, pinnedIds])
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -90,11 +102,11 @@ export default function Page() {
     setLoading(true)
     setErr('')
     try {
-      // quick local duplicate check (server still authoritative)
+      // local duplicate check (server still authoritative)
       const local = ideas.find(i => normalize(i.text) === normalize(value))
       if (local) {
         setErr('Looks like someone already submitted that idea, take a look below to vote for it!')
-        bumpAndHighlight(local.id)
+        pinAndHighlight(local.id)
         return
       }
 
@@ -108,7 +120,7 @@ export default function Page() {
         const body = await res.json().catch(() => ({} as any))
         setErr('Looks like someone already submitted that idea, take a look below to vote for it!')
         await fetchIdeas()
-        if (body?.duplicateOf) bumpAndHighlight(body.duplicateOf)
+        if (body?.duplicateOf) pinAndHighlight(body.duplicateOf)
         return
       }
 
@@ -117,8 +129,10 @@ export default function Page() {
         throw new Error(j?.error || 'Submit failed')
       }
 
+      const j = await res.json().catch(() => ({} as any))
       setText('')
-      fetchIdeas()
+      await fetchIdeas()
+      if (j?.id) pin(j.id) // new ideas also float to the top via pin
     } catch (e: any) {
       setErr(e?.message || 'Submit failed')
     } finally {
@@ -228,7 +242,7 @@ export default function Page() {
         </div>
       </section>
 
-      {/* Ideas list (no public counts, stable order; highlight dupes briefly) */}
+      {/* Ideas list (pinned items first; dupes stay at top after pulse) */}
       <section className="container">
         <ul className="list">
           {renderIdeas.map(it => {
