@@ -19,22 +19,72 @@ const brandEssences = [
   { key: 'core',       title: 'PGD Core Business', subtitle: 'Authentic, purposeful, sustainable',  img: '/brand/core.png' },
 ]
 
+// ---------- helpers (normalize + fuzzy scoring) ----------
+const normalize = (s: string) => s.replace(/\s+/g, ' ').trim().toLowerCase()
+
+function levenshtein(a: string, b: string) {
+  const m = a.length, n = b.length
+  if (!m) return n
+  if (!n) return m
+  const dp = Array.from({ length: n + 1 }, (_, j) => j)
+  for (let i = 1; i <= m; i++) {
+    let prev = dp[0]
+    dp[0] = i
+    for (let j = 1; j <= n; j++) {
+      const tmp = dp[j]
+      dp[j] = Math.min(
+        dp[j] + 1,
+        dp[j - 1] + 1,
+        prev + (a[i - 1] === b[j - 1] ? 0 : 1)
+      )
+      prev = tmp
+    }
+  }
+  return dp[n]
+}
+
+function scoreMatch(text: string, q: string) {
+  // Higher is better; return 0 for no reasonable match
+  const T = normalize(text)
+  const Q = normalize(q)
+  if (!Q) return 0
+  if (T.includes(Q)) {
+    // prioritize prefix matches, then earlier occurrences, then longer queries
+    const idx = T.indexOf(Q)
+    return 100 + (T.startsWith(Q) ? 30 : 0) + Math.max(0, 20 - idx) + Math.min(20, Q.length)
+  }
+  // fuzzy: allow small edit distance compared to length
+  const tokens = T.split(' ')
+  const d1 = levenshtein(T, Q)
+  const d2 = Math.min(...tokens.map(tok => levenshtein(tok, Q)))
+  const d = Math.min(d1, d2)
+  const tol = Math.max(1, Math.floor(Q.length / 3)) // tolerance grows with length
+  if (d <= tol) return 70 - d * 5
+  return 0
+}
+
 export default function Page() {
   const [ideas, setIdeas] = useState<Idea[]>([])
   const [votedIds, setVotedIds] = useState<Set<string>>(new Set())
   const [text, setText] = useState('')
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState('')
+
+  // highlight + pinning
   const [highlightId, setHighlightId] = useState<string | null>(null)
-  const [pinnedIds, setPinnedIds] = useState<string[]>([]) // 👈 persistent “top” order
+  const [pinnedIds, setPinnedIds] = useState<string[]>([])
+
+  // search state
+  const [q, setQ] = useState('')
+  const [suggestions, setSuggestions] = useState<Idea[]>([])
+  const [sIndex, setSIndex] = useState<number>(-1) // keyboard selection
+  const suggRef = useRef<HTMLDivElement | null>(null)
   const pollRef = useRef<number | null>(null)
 
   // Initialize Teams (safe outside Teams)
   useEffect(() => {
     microsoftTeams.app.initialize().catch(() => {})
   }, [])
-
-  const normalize = (s: string) => s.replace(/\s+/g, ' ').trim().toLowerCase()
 
   const fetchIdeas = async () => {
     try {
@@ -44,9 +94,7 @@ export default function Page() {
       setIdeas(items)
       // keep only pins that still exist
       setPinnedIds(prev => prev.filter(id => items.some(i => i.id === id)))
-    } catch {
-      // ignore
-    }
+    } catch {}
   }
 
   const fetchMyVotes = async () => {
@@ -55,27 +103,21 @@ export default function Page() {
       if (!res.ok) return
       const j = await res.json()
       setVotedIds(new Set<string>(j.ids || []))
-    } catch {
-      // ignore
-    }
+    } catch {}
   }
 
   useEffect(() => {
     fetchIdeas()
     fetchMyVotes()
-    pollRef.current = window.setInterval(() => {
-      fetchIdeas()
-      fetchMyVotes()
-    }, 5000)
+    pollRef.current = window.setInterval(() => { fetchIdeas(); fetchMyVotes() }, 5000)
     return () => { if (pollRef.current) clearInterval(pollRef.current) }
   }, [])
 
-  // Pin helper: move id to the front of pinnedIds
+  // ---------- pin + pulse ----------
   const pin = (id: string) => {
     setPinnedIds(prev => [id, ...prev.filter(x => x !== id)])
   }
 
-  // Pin + pulse highlight (pulse fades; pin persists)
   const pinAndHighlight = (id: string) => {
     pin(id)
     setHighlightId(id)
@@ -84,17 +126,73 @@ export default function Page() {
     window.setTimeout(() => setHighlightId(null), 1600)
   }
 
-  // Render order: all pinned first (in pinned order), then the rest in server order
+  // ---------- search suggestion logic ----------
+  useEffect(() => {
+    setSIndex(-1)
+    const query = q.trim()
+    if (query.length < 2) {
+      setSuggestions([])
+      return
+    }
+    const ranked = ideas
+      .map(it => ({ it, score: scoreMatch(it.text, query) }))
+      .filter(r => r.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 8)
+      .map(r => r.it)
+    setSuggestions(ranked)
+  }, [q, ideas])
+
+  const runSearch = () => {
+    const query = q.trim()
+    if (!query) return
+    let target: Idea | undefined
+    if (sIndex >= 0 && sIndex < suggestions.length) {
+      target = suggestions[sIndex]
+    } else if (suggestions.length) {
+      target = suggestions[0]
+    } else {
+      // No suggestions; try a last-pass best match over all ideas
+      const best = ideas
+        .map(it => ({ it, score: scoreMatch(it.text, query) }))
+        .sort((a, b) => b.score - a.score)[0]
+      if (best && best.score > 0) target = best.it
+    }
+
+    if (target) {
+      pinAndHighlight(target.id)
+      setQ('')
+      setSuggestions([])
+      setSIndex(-1)
+      setErr('')
+    } else {
+      setErr("Looks like that name hasn't been submitted yet, use the field above to submit")
+    }
+  }
+
+  // Close suggestions when clicking elsewhere
+  useEffect(() => {
+    const onDocClick = (e: MouseEvent) => {
+      if (!suggRef.current) return
+      if (!suggRef.current.contains(e.target as Node)) {
+        setSuggestions([])
+        setSIndex(-1)
+      }
+    }
+    document.addEventListener('click', onDocClick)
+    return () => document.removeEventListener('click', onDocClick)
+  }, [])
+
+  // ---------- render ordering ----------
   const renderIdeas = useMemo(() => {
     if (!ideas.length) return ideas
     const set = new Set(pinnedIds)
-    const pinned = pinnedIds
-      .map(id => ideas.find(i => i.id === id))
-      .filter(Boolean) as Idea[]
+    const pinned = pinnedIds.map(id => ideas.find(i => i.id === id)).filter(Boolean) as Idea[]
     const rest = ideas.filter(i => !set.has(i.id))
     return [...pinned, ...rest]
   }, [ideas, pinnedIds])
 
+  // ---------- submit ----------
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     const value = text.trim()
@@ -113,7 +211,7 @@ export default function Page() {
       const res = await fetch('/api/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: value.slice(0, 25) }) // server enforces as well
+        body: JSON.stringify({ text: value.slice(0, 25) })
       })
 
       if (res.status === 409) {
@@ -132,7 +230,7 @@ export default function Page() {
       const j = await res.json().catch(() => ({} as any))
       setText('')
       await fetchIdeas()
-      if (j?.id) pin(j.id) // new ideas also float to the top via pin
+      if (j?.id) pin(j.id) // new ideas appear at top
     } catch (e: any) {
       setErr(e?.message || 'Submit failed')
     } finally {
@@ -140,17 +238,16 @@ export default function Page() {
     }
   }
 
+  // ---------- vote / unvote ----------
   const vote = async (id: string) => {
     if (votedIds.has(id)) return
     try {
       const res = await fetch('/api/vote', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id })
       })
       if (!res.ok) throw new Error('Vote failed')
       const next = new Set(votedIds); next.add(id); setVotedIds(next)
-      // optional sync
       fetchMyVotes()
     } catch {
       alert('Vote failed. Try again shortly.')
@@ -161,13 +258,11 @@ export default function Page() {
     if (!votedIds.has(id)) return
     try {
       const res = await fetch('/api/unvote', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id })
       })
       if (!res.ok) throw new Error('Unvote failed')
       const next = new Set(votedIds); next.delete(id); setVotedIds(next)
-      // optional sync
       // fetchMyVotes()
     } catch {
       alert('Unvote failed. Try again shortly.')
@@ -192,14 +287,7 @@ export default function Page() {
           {brandEssences.map(b => (
             <div key={b.key} className="essence-card">
               <div className="essence-img-wrap">
-                <Image
-                  src={b.img}
-                  alt={b.title}
-                  width={800}
-                  height={800}
-                  className="essence-img"
-                  priority={b.key === 'cyber'}
-                />
+                <Image src={b.img} alt={b.title} width={800} height={800} className="essence-img" priority={b.key==='cyber'} />
               </div>
               <div className="essence-text">
                 <div className="essence-title">{b.title}</div>
@@ -224,7 +312,6 @@ export default function Page() {
                   .replace(/_/g, '')      // drop underscore
                   .replace(/\s+/g, ' ')   // collapse spaces
                   .slice(0, 25)
-                // at most one space => two words
                 const parts = v.split(' ')
                 const limited = parts.length > 2 ? parts.slice(0, 2).join(' ') : v
                 setText(limited)
@@ -235,14 +322,64 @@ export default function Page() {
               {loading ? 'Submitting…' : 'Submit'}
             </button>
           </form>
-          <p className="hint small">
+
+          {/* SEARCH BAR */}
+          <div ref={suggRef} style={{ position: 'relative', marginTop: 12 }}>
+            <input
+              className="input"
+              placeholder="Search existing names (type to see suggestions)…"
+              value={q}
+              onChange={e => { setQ(e.target.value); setErr('') }}
+              onKeyDown={e => {
+                if (e.key === 'ArrowDown') {
+                  e.preventDefault()
+                  setSIndex(i => Math.min((i < 0 ? -1 : i) + 1, suggestions.length - 1))
+                } else if (e.key === 'ArrowUp') {
+                  e.preventDefault()
+                  setSIndex(i => Math.max((i < 0 ? 0 : i) - 1, -1))
+                } else if (e.key === 'Enter') {
+                  e.preventDefault()
+                  runSearch()
+                } else if (e.key === 'Escape') {
+                  setSuggestions([]); setSIndex(-1); setQ('')
+                }
+              }}
+            />
+            {suggestions.length > 0 && (
+              <div
+                style={{
+                  position: 'absolute', left: 0, right: 0, zIndex: 20,
+                  background: 'rgba(15,23,42,0.98)', border: '1px solid var(--border)',
+                  borderRadius: 12, marginTop: 8, overflow: 'hidden', boxShadow: '0 10px 24px rgba(0,0,0,0.35)'
+                }}
+              >
+                {suggestions.map((s, idx) => (
+                  <div
+                    key={s.id}
+                    onMouseDown={e => e.preventDefault()}
+                    onClick={() => { setQ(''); setSuggestions([]); setSIndex(-1); pinAndHighlight(s.id) }}
+                    onMouseEnter={() => setSIndex(idx)}
+                    style={{
+                      padding: '10px 12px',
+                      cursor: 'pointer',
+                      background: idx === sIndex ? 'rgba(96,165,250,0.12)' : 'transparent'
+                    }}
+                  >
+                    {s.text}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <p className="hint small" style={{ marginTop: 8 }}>
             Tips: keep it short, memorable, and aligned to the essences above. No emojis or punctuation.
           </p>
           {err && <div className="error">{err}</div>}
         </div>
       </section>
 
-      {/* Ideas list (pinned items first; dupes stay at top after pulse) */}
+      {/* Ideas list (pinned items first; dupes/search results stay at top briefly pulsed) */}
       <section className="container">
         <ul className="list">
           {renderIdeas.map(it => {
