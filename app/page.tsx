@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import * as microsoftTeams from '@microsoft/teams-js'
+import Image from 'next/image'
 
 const APP_NAME = 'PGD Copilot — Renaming Ideas' // header rename
 
@@ -11,21 +12,22 @@ const brandEssences = [
     key: 'cyber',
     title: 'Cyber-Futuristic',
     subtitle: 'Innovative, sleek, intelligent',
-    img: '/brand/cyber.jpg'
+    img: '/brand/cyber.png'
   },
   {
     key: 'industrial',
     title: 'Industrial',
     subtitle: 'Reliable, powerful, foundational',
-    img: '/brand/industrial.jpg'
+    img: '/brand/industrial.png'
   },
   {
     key: 'core',
     title: 'PGD Core Business',
     subtitle: 'Authentic, purposeful, sustainable',
-    img: '/brand/core.jpg'
+    img: '/brand/core.png'
   },
 ]
+
 
 export default function Page() {
   const [ideas, setIdeas] = useState<Idea[]>([])
@@ -134,7 +136,14 @@ export default function Page() {
           {brandEssences.map(b => (
             <div key={b.key} className="essence-card">
               <div className="essence-img-wrap">
-                <img src={b.img} alt={b.title} className="essence-img" />
+                <Image
+                  src={b.img}
+                  alt={b.title}
+                  width={800}
+                  height={800}
+                  className="essence-img"
+                  priority={b.key === 'cyber'} // just to prioritize the first one
+                />
               </div>
               <div className="essence-text">
                 <div className="essence-title">{b.title}</div>
