@@ -36,17 +36,43 @@ export default function Page() {
 
   const sorted = useMemo(() => [...ideas].sort((a,b)=> (b.votes||0)-(a.votes||0)), [ideas])
 
+  const normalize = (s: string) => s.replace(/\s+/g, ' ').trim().toLowerCase()
+  
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!text.trim()) return
     setLoading(true)
     setErr('')
     try {
+      // Optional quick client-side check to avoid roundtrip
+      const norm = normalize(text)
+      const local = ideas.find(i => normalize(i.text) === norm)
+      if (local) {
+        setErr("Looks like someone already submitted that idea, take a look below to vote for it!")
+        document.getElementById(`idea-${local.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        return
+      }
+  
       const res = await fetch('/api/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: text.trim().slice(0,80) })
       })
+  
+      if (res.status === 409) {
+        const body = await res.json().catch(() => ({}))
+        setErr("Looks like someone already submitted that idea, take a look below to vote for it!")
+        const id = body?.duplicateOf
+        if (id) {
+          // ensure latest list, then scroll
+          await fetchIdeas()
+          setTimeout(() => {
+            document.getElementById(`idea-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          }, 100)
+        }
+        return
+      }
+  
       if (!res.ok) throw new Error('Submit failed')
       setText('')
       fetchIdeas()
