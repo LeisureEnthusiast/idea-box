@@ -101,6 +101,25 @@ export default function Page() {
       alert('Vote failed. Try again shortly.')
     }
   }
+  const unvote = async (id: string) => {
+  try {
+    const res = await fetch('/api/unvote', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }) // (optional) include userId here later if you wire identity
+    })
+    if (!res.ok) throw new Error('Unvote failed')
+    // update local state instantly
+    const next = new Set(votedIds)
+    next.delete(id)
+    setVotedIds(next)
+    // (optional) refresh from server to stay in sync
+    // fetchMyVotes()
+  } catch {
+    alert('Unvote failed. Try again shortly.')
+  }
+}
+
 
   return (
     <>
