@@ -2,9 +2,30 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import * as microsoftTeams from '@microsoft/teams-js'
 
-const APP_NAME = process.env.NEXT_PUBLIC_APP_NAME || 'Idea Box'
+const APP_NAME = 'PGD Copilot — Renaming Ideas' // header rename
 
 type Idea = { id: string; text: string; votes: number; created_at: string }
+
+const brandEssences = [
+  {
+    key: 'cyber',
+    title: 'Cyber-Futuristic',
+    subtitle: 'Innovative, sleek, intelligent',
+    img: '/brand/cyber.jpg'
+  },
+  {
+    key: 'industrial',
+    title: 'Industrial',
+    subtitle: 'Reliable, powerful, foundational',
+    img: '/brand/industrial.jpg'
+  },
+  {
+    key: 'core',
+    title: 'PGD Core Business',
+    subtitle: 'Authentic, purposeful, sustainable',
+    img: '/brand/core.jpg'
+  },
+]
 
 export default function Page() {
   const [ideas, setIdeas] = useState<Idea[]>([])
@@ -13,17 +34,15 @@ export default function Page() {
   const [err, setErr] = useState('')
   const pollRef = useRef<number | null>(null)
 
+  // Initialize Teams (safe outside Teams, just ignores)
   useEffect(() => {
-    // Initialize Teams (safe outside Teams too)
     microsoftTeams.app.initialize().catch(() => {})
   }, [])
 
   const fetchIdeas = async () => {
-    try {
-      const res = await fetch('/api/list', { cache: 'no-store' })
-      const json = await res.json()
-      setIdeas(json.items || [])
-    } catch {}
+    const res = await fetch('/api/list', { cache: 'no-store' })
+    const json = await res.json()
+    setIdeas(json.items || [])
   }
 
   useEffect(() => {
@@ -32,10 +51,7 @@ export default function Page() {
     return () => { if (pollRef.current) clearInterval(pollRef.current) }
   }, [])
 
-  const sorted = useMemo(
-    () => [...ideas].sort((a, b) => (b.votes || 0) - (a.votes || 0)),
-    [ideas]
-  )
+  const sorted = useMemo(() => [...ideas].sort((a,b)=> (b.votes||0)-(a.votes||0)), [ideas])
 
   const normalize = (s: string) => s.replace(/\s+/g, ' ').trim().toLowerCase()
 
@@ -46,7 +62,7 @@ export default function Page() {
     setLoading(true)
     setErr('')
     try {
-      // Quick local duplicate check
+      // quick client-side duplicate check (server still authoritative)
       const norm = normalize(value)
       const local = ideas.find(i => normalize(i.text) === norm)
       if (local) {
@@ -58,29 +74,28 @@ export default function Page() {
       const res = await fetch('/api/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: value.slice(0, 80) }),
+        body: JSON.stringify({ text: value.slice(0, 25) }) // 25-char cap (server enforces too)
       })
 
-      // Handle server-side duplicate (409)
       if (res.status === 409) {
         const body = await res.json().catch(() => ({}))
         setErr("Looks like someone already submitted that idea, take a look below to vote for it!")
-        // ensure we have the latest list, then scroll
         await fetchIdeas()
         const id = body?.duplicateOf
-        if (id) {
-          setTimeout(() => {
-            document.getElementById(`idea-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-          }, 100)
-        }
+        if (id) setTimeout(() => {
+          document.getElementById(`idea-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        }, 100)
         return
       }
 
-      if (!res.ok) throw new Error('Submit failed')
+      if (!res.ok) {
+        const j = await res.json().catch(()=>({error:'Submit failed'}))
+        throw new Error(j?.error || 'Submit failed')
+      }
 
       setText('')
       fetchIdeas()
-    } catch (e: any) {
+    } catch (e:any) {
       setErr(e?.message || 'Submit failed')
     } finally {
       setLoading(false)
@@ -92,7 +107,7 @@ export default function Page() {
       const res = await fetch('/api/vote', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id }),
+        body: JSON.stringify({ id })
       })
       if (!res.ok) throw new Error('Vote failed')
       fetchIdeas()
@@ -102,49 +117,80 @@ export default function Page() {
   }
 
   return (
-    <div className="container">
-      <h1 style={{ margin: '8px 0' }}>{APP_NAME} — Project Name Ideas</h1>
-      <p className="small">Submit an idea and upvote your favorites. No sign-in required.</p>
+    <>
+      {/* Hero */}
+      <section className="hero">
+        <div className="container hero-inner">
+          <div>
+            <h1 className="h1">{APP_NAME}</h1>
+            <p className="sub">Submit a short, professional name aligned to one or more brand essences below.</p>
+          </div>
+        </div>
+      </section>
 
-      <form onSubmit={submit} style={{ display: 'flex', gap: 8, margin: '12px 0 16px' }}>
-      <input
-        className="input"
-        placeholder="Two words max, letters & numbers (25 char max)"
-        value={text}
-        onChange={e => {
-          // Soft-filter client-side (server is source of truth)
-          const v = e.target.value
-            .replace(/[^\w ]/g, '')        // keep letters/digits/underscore/space
-            .replace(/_/g, '')             // drop underscore
-            .replace(/\s+/g, ' ')          // collapse spaces
-            .slice(0, 25)
-          // enforce at most one space
-          const parts = v.split(' ')
-          const limited = parts.length > 2 ? parts.slice(0, 2).join(' ') : v
-          setText(limited)
-        }}
-        maxLength={25}
-        />
-        <button className="button" disabled={!text.trim() || loading}>
-          {loading ? 'Submitting…' : 'Submit'}
-        </button>
-      </form>
-
-      {err && <div style={{ color: 'crimson', marginBottom: 12 }}>{err}</div>}
-
-      <ul className="list">
-        {sorted.map(it => (
-          <li key={it.id} id={`idea-${it.id}`} className="card">
-            <div className="row">
-              <div>
-                <div style={{ fontWeight: 600 }}>{it.text}</div>
-                <div className="small">Votes: {it.votes}</div>
+      {/* Brand essences */}
+      <section className="container">
+        <div className="grid-3">
+          {brandEssences.map(b => (
+            <div key={b.key} className="essence-card">
+              <div className="essence-img-wrap">
+                <img src={b.img} alt={b.title} className="essence-img" />
               </div>
-              <button className="button" onClick={() => vote(it.id)}>👍 Upvote</button>
+              <div className="essence-text">
+                <div className="essence-title">{b.title}</div>
+                <div className="essence-sub">{b.subtitle}</div>
+              </div>
             </div>
-          </li>
-        ))}
-      </ul>
-    </div>
+          ))}
+        </div>
+      </section>
+
+      {/* Submit */}
+      <section className="container">
+        <div className="card">
+          <form onSubmit={submit} className="form-row">
+            <input
+              className="input"
+              placeholder="Two words max • letters & numbers • 25 characters"
+              value={text}
+              onChange={e => {
+                const v = e.target.value
+                  .replace(/[^\w ]/g, '') // letters/digits/underscore/space
+                  .replace(/_/g, '')      // drop underscore
+                  .replace(/\s+/g, ' ')   // collapse spaces
+                  .slice(0, 25)
+                // enforce one space => two words max
+                const parts = v.split(' ')
+                const limited = parts.length > 2 ? parts.slice(0, 2).join(' ') : v
+                setText(limited)
+              }}
+              maxLength={25}
+            />
+            <button className="button primary" disabled={!text.trim() || loading}>
+              {loading ? 'Submitting…' : 'Submit'}
+            </button>
+          </form>
+          <p className="hint small">
+            Tips: keep it short, memorable, and aligned to one or more essences above. No emojis or punctuation.
+          </p>
+          {err && <div className="error">{err}</div>}
+        </div>
+      </section>
+
+      {/* Ideas list */}
+      <section className="container">
+        <ul className="list">
+          {sorted.map(it => (
+            <li key={it.id} id={`idea-${it.id}`} className="idea-row">
+              <div className="idea-text">{it.text}</div>
+              <div className="idea-votes">
+                <span className="badge">{it.votes}</span>
+                <button className="button ghost" onClick={() => vote(it.id)}>👍 Upvote</button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      </section>
+    </>
   )
 }
