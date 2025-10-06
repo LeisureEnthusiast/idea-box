@@ -187,7 +187,12 @@ export default function Page() {
         throw new Error(j?.error || 'Submit failed')
       }
       const j = await res.json().catch(() => ({} as any))
-      setText(''); await fetchIdeas(); if (j?.id) pin(j.id)
+      setText('')
+      await fetchIdeas()                      // ensure the new row is in the DOM
+      if (j?.id) {
+        // pin + pulse highlight (same effect as duplicate/search)
+        setTimeout(() => pinAndHighlight(j.id), 80)  // small delay lets React render the new row
+      }
     } catch (e:any) {
       setSubmitErr(e?.message || 'Submit failed')
     } finally { setLoading(false) }
