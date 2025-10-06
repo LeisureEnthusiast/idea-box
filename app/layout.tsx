@@ -2,8 +2,8 @@ import './globals.css'
 import type { Metadata } from 'next'
 
 export const metadata: Metadata = {
-  title: 'Idea Box — Submit & Vote',
-  description: 'Submit ideas and upvote favorites (no sign-in).',
+  title: 'PGD Copilot — Renaming Ideas',
+  description: 'Submit short, professional names aligned to PGD brand essences.',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
