@@ -85,7 +85,7 @@ export default function Page() {
 
       <ul className="list">
         {sorted.map(it => (
-          <li key={it.id} className="card">
+          <li key={it.id} id={`idea-${it.id}`} className="card">
             <div className="row">
               <div>
                 <div style={{fontWeight:600}}>{it.text}</div>
