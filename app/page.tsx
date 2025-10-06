@@ -186,11 +186,13 @@ export default function Page() {
               <li key={it.id} id={`idea-${it.id}`} className="idea-row">
                 <div className="idea-text">{it.text}</div>
                 <div className="idea-votes">
-                  {didVote && <span className="pill pill-success">Voted</span>}
-                  <button className="button ghost" disabled={didVote} onClick={() => vote(it.id)}>
-                    {didVote ? 'Thanks!' : '👍 Vote'}
-                  </button>
-                </div>
+                {didVote && <span className="pill pill-success">Voted</span>}
+                {didVote ? (
+                  <button className="button ghost" onClick={() => unvote(it.id)}>↩︎ Unvote</button>
+                ) : (
+                  <button className="button ghost" onClick={() => vote(it.id)}>👍 Vote</button>
+                )}
+              </div>
               </li>
             )
           })}
