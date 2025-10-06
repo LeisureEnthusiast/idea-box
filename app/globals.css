@@ -133,9 +133,14 @@ body {
   background: rgba(34,197,94,0.15);
 }
 
-/* Remove any footer-like element */
-footer, .footer, .site-footer, [data-testid="footer"] {
-  display: none !important;
-}
+/* Kill any footer element, just in case */
+footer, .site-footer, .footer, [class*="footer"] { display: none !important; }
 
+/* Remove bottom gap */
+html, body { height: auto; min-height: 100% !important; }
+body { padding-bottom: 0 !important; margin-bottom: 0 !important; }
+
+/* Ensure last section/list doesn’t add extra space */
+section:last-of-type, .container:last-of-type { margin-bottom: 0 !important; }
+.list { margin-bottom: 0 !important; }
 
