@@ -99,12 +99,17 @@ export default function Page() {
     return () => { if (pollRef.current) clearInterval(pollRef.current) }
   }, [])
 
-  // pin + pulse
+  // pin + pulse (optionally scroll)
   const pin = (id: string) => setPinnedIds(prev => [id, ...prev.filter(x => x !== id)])
-  const pinAndHighlight = (id: string) => {
+  const pinAndHighlight = (id: string, opts: { scroll?: boolean } = { scroll: true }) => {
     pin(id)
     setHighlightId(id)
-    document.getElementById(`idea-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    if (opts.scroll) {
+      // wait for DOM to reflect new order, then scroll
+      requestAnimationFrame(() => {
+        document.getElementById(`idea-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      })
+    }
     window.setTimeout(() => setHighlightId(null), 1600)
   }
 
@@ -143,7 +148,7 @@ export default function Page() {
     }
 
     if (target) {
-      pinAndHighlight(target.id)
+      pinAndHighlight(target.id, { scroll: false }) // <— keep scroll position for search
       setQ(''); setSuggestions([]); setSIndex(-1); setSearchErr('')
     } else {
       setSearchErr("Looks like that name hasn't been submitted yet, use the field above to submit")
@@ -170,7 +175,7 @@ export default function Page() {
       const local = ideas.find(i => normalize(i.text) === normalize(value))
       if (local) {
         setSubmitErr('Looks like someone already submitted that idea, take a look below to vote for it!')
-        pinAndHighlight(local.id)
+        pinAndHighlight(local.id, { scroll: true })
         return
       }
       const res = await fetch('/api/submit', {
@@ -181,7 +186,7 @@ export default function Page() {
         const body = await res.json().catch(() => ({} as any))
         setSubmitErr('Looks like someone already submitted that idea, take a look below to vote for it!')
         await fetchIdeas()
-        if (body?.duplicateOf) pinAndHighlight(body.duplicateOf)
+        if (body?.duplicateOf) pinAndHighlight(body.duplicateOf, { scroll: true })
         return
       }
       if (!res.ok) {
@@ -191,7 +196,7 @@ export default function Page() {
       const j = await res.json().catch(() => ({} as any))
       setText('')
       await fetchIdeas()
-      if (j?.id) setTimeout(() => pinAndHighlight(j.id), 80) // new item: pin + pulse
+      if (j?.id) setTimeout(() => pinAndHighlight(j.id, { scroll: true }), 80) // new item: pin + pulse + scroll
     } catch (e:any) {
       setSubmitErr(e?.message || 'Submit failed')
     } finally { setLoading(false) }
@@ -312,7 +317,7 @@ export default function Page() {
                   <div
                     key={s.id}
                     onMouseDown={e => e.preventDefault()}
-                    onClick={() => { setQ(''); setSuggestions([]); setSIndex(-1); pinAndHighlight(s.id) }}
+                    onClick={() => { setQ(''); setSuggestions([]); setSIndex(-1); pinAndHighlight(s.id, { scroll: false }) }}
                     onMouseEnter={() => setSIndex(idx)}
                     style={{
                       padding: '10px 12px',
